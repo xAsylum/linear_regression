@@ -3,13 +3,18 @@ from array import array
 from random import shuffle, sample
 
 import numpy as np
+from enum import Enum
 
 filename = 'dane.data'
 
 
+class StopCondition(Enum):
+    Gradient = 1,
+    Iterations = 2
+
 class BaseFunction:
-    def __init__(self, theta):
-        self.parameters = theta
+    def __init__(self):
+        self.parameters = None
 
     @abstractmethod
     def evaluate(self, x):
@@ -19,7 +24,8 @@ class BaseFunction:
         pass
 
     def theta(self, p):
-        assert len(p) == len(self.parameters)
+        if self.parameters is not None:
+            assert len(p) == len(self.parameters)
         self.parameters = p
 
 class LossFunction:
@@ -43,6 +49,19 @@ class Linear(BaseFunction):
         assert len(self.parameters) == len(x)
         return x
 
+
+class Uninomial(BaseFunction):
+    def __init__(self, pow):
+        self.pow = pow
+        super().__init__()
+
+    def evaluate(self, x):
+        assert len(self.parameters) == len(x)
+        return np.sum([sgn(x[i]) * (abs(x[i])** self.pow) * self.parameters[i] for i in range(len(x))])
+    def diff(self, x):
+        assert len(self.parameters) == len(x)
+        return [sgn(x[i]) * (abs(x[i]) ** self.pow) for i in range(len(x))]
+
 class QuadraticLossFunction(LossFunction):
     def calculate_loss(self, base, x, y):
         compute = base.evaluate(x) - y
@@ -54,6 +73,26 @@ class QuadraticLossFunction(LossFunction):
         vector = [x[i] * compute for i in range(len(x))]
         return vector
 
+def sgn(x):
+    if x > 0:
+        return 1
+    return -1
+
+class RidgeRegressionFunction(LossFunction):
+    def __init__(self, alpha):
+        self.alpha = alpha
+
+    def calculate_loss(self, base, x, y):
+        compute = base.evaluate(x) - y
+        compute **= 2
+        compute += self.alpha * sum([base.parameters[i] ** 2 for i in range(len(x))])
+        return compute
+
+    def calculate_gradient(self, base, x, y):
+        compute = base.evaluate(x) - y
+        d = base.diff(x)
+        vector = [d[i] * compute + 2 * self.alpha * base.parameters[i] for i in range(len(x))]
+        return vector
 
 def normalize_features(train_data):
     mean = [np.mean(
@@ -114,16 +153,20 @@ class LinearRegressionModel:
             self.train = normalize_features(self.train)
             self.validate = normalize_features(self.validate)
 
-        self.eta = 0.0005
-        self.baseFunction = Linear([0 for _ in range(len(self.train[0]))])
+        self.eta = 0.005
+        self.baseFunction = Linear()
         self.lossFunction = QuadraticLossFunction()
         self.stop = 0.1
         self.mini_batch = False
         self.batch_size = 32
+        self.condition = StopCondition.Iterations
+        self.rep_count = 1000
+        self.print = 50
         pass
 
     def set_parameters(self, eta = None, loss_function = None,
-                       base_function = None, stop = None):
+                       base_function = None, stop = None,
+                       condition = None, rep_count = None, print_c = None, mini_batch = None, batch_size = None):
         if eta is not None:
             self.eta = eta
         if loss_function is not None:
@@ -132,6 +175,16 @@ class LinearRegressionModel:
             self.baseFunction = base_function
         if stop is not None:
             self.stop = stop
+        if condition is not None:
+            self.condition = condition
+        if rep_count is not None:
+            self.rep_count = rep_count
+        if print_c is not None:
+            self.print = print_c
+        if mini_batch is not None:
+            self.mini_batch = mini_batch
+        if batch_size is not None:
+            self.batch_size = batch_size
 
         pass
 
@@ -165,7 +218,7 @@ class LinearRegressionModel:
             k = k + 1
             last_theta = theta[-1]
             self.baseFunction.theta(last_theta)
-            if self.mini_batch:
+            if self.mini_batch != True:
                 gradient = self.gradient_regular(planning_matrix, targets)
             else:
                 mini_batch = sample(range(len(self.train)), self.batch_size)
@@ -175,13 +228,18 @@ class LinearRegressionModel:
                 last_theta[i] - self.eta * gradient[i]
                 for i in range(theta_size)
             ])
-            #if (k % 100) == 0:
-            #    print(f"{k}: Gradient: {np.linalg.norm(gradient)}, MSE: {
-            #    self.lossFunction.mse(self.baseFunction, planning_matrix, targets)
-            #    }")
-            if np.linalg.norm(gradient) < self.stop:
+
+            if self.print > 0 and (k % self.print) == 0:
+                print(f"{k}: Gradient: {np.linalg.norm(gradient)}, MSE: {
+                self.lossFunction.mse(self.baseFunction, planning_matrix, targets)
+                }")
+
+            if (self.condition == StopCondition.Gradient
+                    and np.linalg.norm(gradient) < self.stop):
                 break
-            if k > 2 * (10 ** 4):
+
+            if (self.condition == StopCondition.Iterations
+                    and k > self.rep_count):
                 break
         self.theta = theta[-1]
         return theta[-1]
