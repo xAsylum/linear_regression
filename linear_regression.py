@@ -1,5 +1,7 @@
 from abc import abstractmethod
 from array import array
+from os.path import split
+import matplotlib.pyplot as plt
 from random import shuffle, sample
 
 import numpy as np
@@ -10,7 +12,8 @@ filename = 'dane.data'
 
 class StopCondition(Enum):
     Gradient = 1,
-    Iterations = 2
+    Iterations = 2,
+    Both = 3
 
 class BaseFunction:
     def __init__(self):
@@ -38,8 +41,7 @@ class LossFunction:
 
     def mse(self, base, planning_matrix, targets):
         assert len(planning_matrix) == len(targets)
-        return np.mean([self.calculate_loss(base, planning_matrix[k], targets[k])
-                        for k in range(len(targets))])
+        return self.calculate_loss(base, planning_matrix, targets)
 
 class Linear(BaseFunction):
     def evaluate(self, x):
@@ -48,51 +50,141 @@ class Linear(BaseFunction):
     def diff(self, x):
         assert len(self.parameters) == len(x)
         return x
+def sgn(x):
+    if x > 0:
+        return 1
+    return -1
 
-
+# x -> [sgn(x_i) * |x_i|^p]
 class Uninomial(BaseFunction):
-    def __init__(self, pow):
-        self.pow = pow
+    def __init__(self, p):
+        self.pow = p
         super().__init__()
 
     def evaluate(self, x):
         assert len(self.parameters) == len(x)
         return np.sum([sgn(x[i]) * (abs(x[i])** self.pow) * self.parameters[i] for i in range(len(x))])
     def diff(self, x):
-        assert len(self.parameters) == len(x)
+        # assert len(self.parameters) == len(x)
         return [sgn(x[i]) * (abs(x[i]) ** self.pow) for i in range(len(x))]
 
+class Zeros(BaseFunction):
+    def __init__(self, zeros):
+        super().__init__()
+        self.take = []
+        for i in range(len(zeros)):
+            if zeros[i] != 0:
+                self.take.append(i)
+        self.parameters = [0 for _ in range(len(self.take) + 1)]
+
+    def evaluate(self, x):
+        return self.parameters[0] + sum([self.parameters[i + 1] * x[self.take[i]] for i in range(len(self.take))])
+
+    def diff(self, x):
+        return [1, *[x[self.take[i]] for i in range(len(self.take))]]
+
+class Gaussian(BaseFunction):
+    def __init__(self, s):
+        self.s =s
+        super().__init__()
+
+    def evaluate(self, x):
+        return self.parameters[0] +  np.sum([self.parameters[i + 1] * np.exp(-((x[i+1] / self.s) ** 2)) for i in range(len(x) - 1)])
+
+    def diff(self, x):
+        return [1, *np.exp([(-((x[i+1] / self.s) ** 2) ) for i in range(len(x) - 1)])]
+
+
+class Custom(BaseFunction):
+    def __init__(self, help_func = None):
+        super().__init__()
+        self.parameters = [0 for _ in range(9)]
+        self.helpFunc = help_func
+
+    def evaluate(self, x):
+        if self.helpFunc is None:
+            return self.parameters[0] + np.sum([self.parameters[i + 1] * x[i] for i in range(0, 7)]) + self.parameters[8] * x[1] * x[6]
+        self.helpFunc.theta(self.parameters)
+        return self.helpFunc.evaluate(self.diff(x))
+
+    def own_diff(self, x):
+        return [1, *[x[i] for i in range(0, 7)], x[1] * x[6]]
+
+    def diff(self, x):
+        if self.helpFunc is None:
+            return self.own_diff(x)
+        return self.helpFunc.diff(self.own_diff(x))
+
 class QuadraticLossFunction(LossFunction):
-    def calculate_loss(self, base, x, y):
-        compute = base.evaluate(x) - y
-        return compute ** 2
+    def calculate_loss(self, base, planning_matrix, targets):
+        assert len(planning_matrix) == len(targets)
+        m = len(planning_matrix)
+        total = 0
+        for k in range(m):
+            x = planning_matrix[k]
+            y = targets[k]
+            compute = base.evaluate(x) - y
+            compute **= 2
+            total += compute
+        total /= m
+        return total
 
-    def calculate_gradient(self, base, x, y):
-        compute = base.evaluate(x)
-        compute -= y
-        vector = [x[i] * compute for i in range(len(x))]
-        return vector
-
-def sgn(x):
-    if x > 0:
-        return 1
-    return -1
+    def calculate_gradient(self, base, planning_matrix, targets):
+        m = len(planning_matrix)
+        t = len(base.parameters)
+        ans = [0 for _ in range(t)]
+        for k in range(m):
+            diff = base.diff(planning_matrix[k])
+            calc = 2 * (base.evaluate(planning_matrix[k]) - targets[k])
+            for i in range(t):
+                ans[i] += diff[i] * calc
+        for i in range(t):
+            ans[i] /= m
+        return ans
 
 class RidgeRegressionFunction(LossFunction):
     def __init__(self, alpha):
         self.alpha = alpha
 
-    def calculate_loss(self, base, x, y):
-        compute = base.evaluate(x) - y
-        compute **= 2
-        compute += self.alpha * sum([base.parameters[i] ** 2 for i in range(len(x))])
-        return compute
+    def calculate_loss(self, base, planning_matrix, targets):
+        assert len(planning_matrix) == len(targets)
+        quadratic = QuadraticLossFunction()
+        t = len(base.parameters)
+        total = quadratic.calculate_loss(base, planning_matrix, targets)
+        total += self.alpha * np.sum([(i > 0) *
+                base.parameters[i] ** 2 for i in range(t)])
+        return total
 
-    def calculate_gradient(self, base, x, y):
-        compute = base.evaluate(x) - y
-        d = base.diff(x)
-        vector = [d[i] * compute + 2 * self.alpha * base.parameters[i] for i in range(len(x))]
-        return vector
+    def calculate_gradient(self, base, planning_matrix, targets):
+        quadratic = QuadraticLossFunction()
+        t = len(base.parameters)
+        ans = quadratic.calculate_gradient(base, planning_matrix, targets)
+        for i in range(t):
+            ans[i] += (i > 0) * 2 * self.alpha * base.parameters[i]
+        return ans
+
+class LassoRegressionFunction(LossFunction):
+    def __init__(self, beta):
+        self.beta = beta
+
+    def calculate_loss(self, base, planning_matrix, targets):
+        assert len(planning_matrix) == len(targets)
+        quadratic = QuadraticLossFunction()
+        t = len(base.parameters)
+        total = quadratic.calculate_loss(base, planning_matrix, targets)
+        total += self.beta * np.sum([(i > 0) *
+                                      abs(base.parameters[i]) for i in range(t)])
+        return total
+
+    def calculate_gradient(self, base, planning_matrix, targets):
+        assert len(planning_matrix) == len(targets)
+        quadratic = QuadraticLossFunction()
+        t = len(base.parameters)
+        ans = quadratic.calculate_gradient(base, planning_matrix, targets)
+        for i in range(t):
+            ans[i] += (i > 0) * 2 * self.beta * sgn(base.parameters[i])
+        return ans
+
 
 def normalize_features(train_data):
     mean = [np.mean(
@@ -111,6 +203,20 @@ def normalize_features(train_data):
 
 class LinearRegressionModel:
 
+    def corr(self):
+        corr_matrix = np.corrcoef([self.train[i][:8] for i in range(len(self.train))], rowvar=False)
+
+        plt.figure(figsize=(8, 6))
+        im = plt.imshow(corr_matrix, cmap='coolwarm', vmin=-1, vmax=1)
+        plt.colorbar(im)
+
+        labels = ['X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'Y']
+        plt.xticks(ticks=np.arange(8), labels=labels, rotation=45, ha='right')
+        plt.yticks(ticks=np.arange(8), labels=labels)
+
+        plt.title("Correlation Matrix")
+        plt.tight_layout()
+        plt.show()
     def open_file(self, name):
         data = []
         with open(name, 'r') as file:
@@ -126,7 +232,7 @@ class LinearRegressionModel:
         shuffle(data)
         self.raw_data = data
 
-    def split_data(self, train_ratio, valid_ratio):
+    def split_data(self, train_ratio, valid_ratio, normalise = True):
         assert train_ratio + valid_ratio < 1
         train = train_ratio
         valid = valid_ratio
@@ -138,6 +244,10 @@ class LinearRegressionModel:
         self.train, self.validate, self.test = (
             self.raw_data[:train], self.raw_data[train:valid],
             self.raw_data[valid:])
+        if normalise:
+            self.test = normalize_features(self.test)
+            self.train = normalize_features(self.train)
+            self.validate = normalize_features(self.validate)
 
     def __init__(self, file, normalise = True,
                  train_ratio = 0.6, valid_ratio = 0.2):
@@ -148,11 +258,7 @@ class LinearRegressionModel:
         self.open_file(file)
         self.split_data(train_ratio, valid_ratio)
         self.theta = None
-        if normalise:
-            self.test = normalize_features(self.test)
-            self.train = normalize_features(self.train)
-            self.validate = normalize_features(self.validate)
-
+        self.split_data(train_ratio, valid_ratio, normalise)
         self.eta = 0.005
         self.baseFunction = Linear()
         self.lossFunction = QuadraticLossFunction()
@@ -162,11 +268,14 @@ class LinearRegressionModel:
         self.condition = StopCondition.Iterations
         self.rep_count = 1000
         self.print = 50
+        self.fraction = 1
+        self.split = False
         pass
 
     def set_parameters(self, eta = None, loss_function = None,
                        base_function = None, stop = None,
-                       condition = None, rep_count = None, print_c = None, mini_batch = None, batch_size = None):
+                       condition = None, rep_count = None, print_c = None, mini_batch = None, batch_size = None,
+                       split = False, fraction = 1):
         if eta is not None:
             self.eta = eta
         if loss_function is not None:
@@ -185,45 +294,45 @@ class LinearRegressionModel:
             self.mini_batch = mini_batch
         if batch_size is not None:
             self.batch_size = batch_size
+        if split is not None:
+            self.split = split
+        if fraction is not None:
+            self.fraction = fraction
 
         pass
 
-    def gradient_regular(self, planning_matrix, targets):
-        d = len(planning_matrix[0])
-        ans = [0 for _ in range(d)]
-        M = len(planning_matrix)
-        for k in range(M):
-            entry = self.lossFunction.calculate_gradient(self.baseFunction, planning_matrix[k], targets[k])
-            for i in range(d):
-                ans[i] += entry[i]
-
-        for i in range(d):
-            ans[i] /= M
-        return ans
-
+    def gradient_regular(self, planning_matrix, targets, theta):
+        self.baseFunction.theta(theta)
+        return self.lossFunction.calculate_gradient(self.baseFunction, planning_matrix, targets)
 
     def linear_regression(self):
-        theta_size = len(self.train[0])
+        if self.baseFunction.parameters is None:
+            theta_size = len(self.train[0])
+        else:
+            theta_size = len(self.baseFunction.parameters)
         theta = [[0 for _ in range(theta_size)]]
+        if self.split:
+            data = sample(self.train, int(self.fraction * len(self.train)))
+        else:
+            data = self.train
         k = 0
         planning_matrix = [
-            [1, *[self.train[i][j] for j in range(len(self.train[i]) - 1)]]
-            for i in range(len(self.train))
+            [1, *[data[i][j] for j in range(len(self.train[i]) - 1)]]
+            for i in range(len(data))
         ]
         targets = [
-            self.train[i][-1]
-            for i in range(len(self.train))
+            data[i][-1]
+            for i in range(len(data))
         ]
         while True:
             k = k + 1
             last_theta = theta[-1]
-            self.baseFunction.theta(last_theta)
-            if self.mini_batch != True:
-                gradient = self.gradient_regular(planning_matrix, targets)
+            if not self.mini_batch:
+                gradient = self.gradient_regular(planning_matrix, targets, last_theta)
             else:
-                mini_batch = sample(range(len(self.train)), self.batch_size)
+                mini_batch = sample(range(len(data)), self.batch_size)
                 gradient = self.gradient_regular([planning_matrix[i] for i in mini_batch],
-                                                 [targets[i] for i in mini_batch])
+                                                 [targets[i] for i in mini_batch], last_theta)
             theta.append([
                 last_theta[i] - self.eta * gradient[i]
                 for i in range(theta_size)
@@ -234,11 +343,11 @@ class LinearRegressionModel:
                 self.lossFunction.mse(self.baseFunction, planning_matrix, targets)
                 }")
 
-            if (self.condition == StopCondition.Gradient
+            if (self.condition != StopCondition.Iterations
                     and np.linalg.norm(gradient) < self.stop):
                 break
 
-            if (self.condition == StopCondition.Iterations
+            if (self.condition != StopCondition.Gradient
                     and k > self.rep_count):
                 break
         self.theta = theta[-1]
@@ -248,23 +357,55 @@ class LinearRegressionModel:
         if self.theta is None:
             return
         self.baseFunction.theta(self.theta)
-
-        planning_matrix = [
+        newfunc = QuadraticLossFunction()
+        print(f"Train Set MSE: {newfunc.mse(self.baseFunction, [
+            [1, *[self.train[i][j] for j in range(len(self.train[i]) - 1)]]
+            for i in range(len(self.train))
+        ], [ self.train[i][-1] for i in range(len(self.train))])}")
+        print(f"Test Set MSE: {newfunc.mse(self.baseFunction, [
             [1, *[self.test[i][j] for j in range(len(self.test[i]) - 1)]]
             for i in range(len(self.test))
-        ]
-        targets = [
-            self.test[i][-1]
-            for i in range(len(self.test))
-        ]
-
-        return self.lossFunction.mse(self.baseFunction, planning_matrix, targets)
+        ], [ self.test[i][-1] for i in range(len(self.test)) ])}")
 
     def prediction(self, x):
         if self.theta is None:
             return
         self.baseFunction.theta(self.theta)
         return self.baseFunction.evaluate(x)
+
+    def print_results(self):
+        # Prepare train data
+        train_data = [(self.prediction([1, *[self.train[k][j] for j in range(len(self.train[0]) - 1)]]),
+                       self.train[k][-1])
+                      for k in range(len(self.train))]
+
+        # Prepare test data
+        test_data = [(self.prediction([1, *[self.test[k][j] for j in range(len(self.test[0]) - 1)]]),
+                      self.test[k][-1])
+                     for k in range(len(self.test))]
+
+        # Extract predictions and actuals
+        train_preds = [x[0] for x in train_data]
+        train_actuals = [x[1] for x in train_data]
+        test_preds = [x[0] for x in test_data]
+        test_actuals = [x[1] for x in test_data]
+
+        # Plot
+        plt.figure(figsize=(10, 6))
+        plt.scatter(train_actuals, train_preds, alpha=0.6, label='Train Data', color='blue')
+        plt.scatter(test_actuals, test_preds, alpha=0.6, label='Test Data', color='orange')
+        plt.xlabel('Actual Values')
+        plt.ylabel('Predicted Values')
+        plt.title('Actual vs Predicted Values')
+
+        # Line of perfect prediction
+        max_val = max(max(train_actuals + test_actuals), max(train_preds + test_preds))
+        min_val = min(min(train_actuals + test_actuals), min(train_preds + test_preds))
+        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Perfect Prediction')
+
+        plt.legend()
+        plt.grid(True)
+        plt.show()
 
 
 
