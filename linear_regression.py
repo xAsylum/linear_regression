@@ -48,7 +48,7 @@ class Linear(BaseFunction):
         assert len(self.parameters) == len(x)
         return np.sum([x[i] * self.parameters[i] for i in range(len(x))])
     def diff(self, x):
-        assert len(self.parameters) == len(x)
+        # assert len(self.parameters) == len(x)
         return x
 def sgn(x):
     if x > 0:
@@ -98,17 +98,19 @@ class Gaussian(BaseFunction):
 class Custom(BaseFunction):
     def __init__(self, help_func = None):
         super().__init__()
-        self.parameters = [0 for _ in range(9)]
+        self.parameters = [0 for _ in range(10)]
         self.helpFunc = help_func
+        if self.helpFunc is None:
+            self.helpFunc = Linear()
+        self.helpFunc.parameters = self.parameters
 
     def evaluate(self, x):
-        if self.helpFunc is None:
-            return self.parameters[0] + np.sum([self.parameters[i + 1] * x[i] for i in range(0, 7)]) + self.parameters[8] * x[1] * x[6]
         self.helpFunc.theta(self.parameters)
         return self.helpFunc.evaluate(self.diff(x))
 
     def own_diff(self, x):
-        return [1, *[x[i] for i in range(0, 7)], x[1] * x[6]]
+        arr = [*[x[i] for i in [0, 1, 2, 3, 4, 5, 6, 7]], x[4] * x[5], x[2] * x[7]]
+        return arr
 
     def diff(self, x):
         if self.helpFunc is None:
@@ -182,7 +184,35 @@ class LassoRegressionFunction(LossFunction):
         t = len(base.parameters)
         ans = quadratic.calculate_gradient(base, planning_matrix, targets)
         for i in range(t):
-            ans[i] += (i > 0) * 2 * self.beta * sgn(base.parameters[i])
+            ans[i] += (i > 0) * self.beta * sgn(base.parameters[i])
+        return ans
+
+class ElasticNetworkLossFunction(LossFunction):
+    def __init__(self, alpha, beta):
+        self.alpha = alpha
+        self.beta = beta
+
+    def calculate_loss(self, base, planning_matrix, targets):
+        assert len(planning_matrix) == len(targets)
+        quadratic = QuadraticLossFunction()
+        t = len(base.parameters)
+        total = quadratic.calculate_loss(base, planning_matrix, targets)
+        total += self.alpha * np.sum([(i > 0) *
+                                      base.parameters[i] ** 2 for i in range(t)])
+        total += self.beta * np.sum([(i > 0) *
+                                      abs(base.parameters[i]) for i in range(t)])
+
+
+        return total
+
+    def calculate_gradient(self, base, planning_matrix, targets):
+        assert len(planning_matrix) == len(targets)
+        quadratic = QuadraticLossFunction()
+        t = len(base.parameters)
+        ans = quadratic.calculate_gradient(base, planning_matrix, targets)
+        for i in range(t):
+            ans[i] += (i > 0) * 2 * self.alpha * base.parameters[i]
+            ans[i] += (i > 0) * self.beta * sgn(base.parameters[i])
         return ans
 
 
@@ -203,6 +233,49 @@ def normalize_features(train_data):
 
 class LinearRegressionModel:
 
+    def solve_analytically(self, alpha = 0.0):
+        if self.split:
+            data = sample(self.train, int(self.fraction * len(self.train)))
+        else:
+            data = self.train
+
+        planning_matrix = np.array([
+            [1, *[data[i][j] for j in range(len(self.train[i]) - 1)]]
+            for i in range(len(data))
+        ])
+
+        targets = np.array([data[i][-1] for i in range(len(data))])
+        X = planning_matrix
+        y = targets
+        XtX = (X.T @ X) + (alpha * np.eye(len(planning_matrix[0])))
+        Xty = X.T @ y
+        self.theta = np.linalg.inv(XtX) @ Xty
+
+    def estimate_coef(self, eta):
+
+        alfa = [0, 0.0001, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1]
+        beta = [0, 0.01, 0.05, 0.1, 0.2, 0.5, 1, 2, 5]
+        pick_alfa = -1
+        best_alpha = 9999999999
+        pick_beta = -1
+        best_beta = 9999999999
+        self.set_parameters(eta=eta, stop=0.5, rep_count=1750, condition=StopCondition.Both)
+        self.set_parameters(mini_batch=True, batch_size=64, print_c=-1)
+        for i in range(len(alfa)):
+            self.set_parameters(loss_function=RidgeRegressionFunction(alfa[i]))
+            self.linear_regression()
+            res = self.MSE(self.validate)
+            if res < best_alpha:
+                best_alpha = res
+                pick_alfa = alfa[i]
+        for j in range(len(beta)):
+            self.set_parameters(loss_function=LassoRegressionFunction(beta[j]))
+            self.linear_regression()
+            res = self.MSE(self.validate)
+            if res < best_beta:
+                best_beta = res
+                pick_beta = beta[j]
+        return pick_alfa, pick_beta
     def corr(self):
         corr_matrix = np.corrcoef([self.train[i][:8] for i in range(len(self.train))], rowvar=False)
 
@@ -245,8 +318,8 @@ class LinearRegressionModel:
             self.raw_data[:train], self.raw_data[train:valid],
             self.raw_data[valid:])
         if normalise:
-            self.test = normalize_features(self.test)
             self.train = normalize_features(self.train)
+            self.test = normalize_features(self.test)
             self.validate = normalize_features(self.validate)
 
     def __init__(self, file, normalise = True,
@@ -353,19 +426,19 @@ class LinearRegressionModel:
         self.theta = theta[-1]
         return theta[-1]
 
-    def MSE(self):
+    def results(self):
+        print(f"Train Set MSE: {self.MSE(self.train)}")
+        print(f"Test Set MSE: {self.MSE(self.test)}")
+
+    def MSE(self, data):
         if self.theta is None:
             return
         self.baseFunction.theta(self.theta)
         newfunc = QuadraticLossFunction()
-        print(f"Train Set MSE: {newfunc.mse(self.baseFunction, [
-            [1, *[self.train[i][j] for j in range(len(self.train[i]) - 1)]]
-            for i in range(len(self.train))
-        ], [ self.train[i][-1] for i in range(len(self.train))])}")
-        print(f"Test Set MSE: {newfunc.mse(self.baseFunction, [
-            [1, *[self.test[i][j] for j in range(len(self.test[i]) - 1)]]
-            for i in range(len(self.test))
-        ], [ self.test[i][-1] for i in range(len(self.test)) ])}")
+        return newfunc.mse(self.baseFunction, [
+            [1, *[data[i][j] for j in range(len(data[i]) - 1)]]
+            for i in range(len(data))
+        ], [ data[i][-1] for i in range(len(data))])
 
     def prediction(self, x):
         if self.theta is None:
