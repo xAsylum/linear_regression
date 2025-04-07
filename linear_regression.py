@@ -39,10 +39,6 @@ class LossFunction:
     def calculate_gradient(self, base, x, y):
         pass
 
-    def mse(self, base, planning_matrix, targets):
-        assert len(planning_matrix) == len(targets)
-        return self.calculate_loss(base, planning_matrix, targets)
-
 class Linear(BaseFunction):
     def evaluate(self, x):
         assert len(self.parameters) == len(x)
@@ -98,7 +94,7 @@ class Gaussian(BaseFunction):
 class Custom(BaseFunction):
     def __init__(self, help_func = None):
         super().__init__()
-        self.parameters = [0 for _ in range(10)]
+        self.parameters = [0 for _ in range(29)]
         self.helpFunc = help_func
         if self.helpFunc is None:
             self.helpFunc = Linear()
@@ -109,7 +105,7 @@ class Custom(BaseFunction):
         return self.helpFunc.evaluate(self.diff(x))
 
     def own_diff(self, x):
-        arr = [*[x[i] for i in [0, 1, 2, 3, 4, 5, 6, 7]], x[4] * x[5], x[2] * x[7]]
+        arr = [*[x[i] for i in [0, 1, 2, 3, 4, 5, 6, 7]], *[x[i] * x[j] for i in [1, 2, 3, 4, 5, 6, 7] for j in range(i, 7)] ]
         return arr
 
     def diff(self, x):
@@ -119,6 +115,7 @@ class Custom(BaseFunction):
 
 class QuadraticLossFunction(LossFunction):
     def calculate_loss(self, base, planning_matrix, targets):
+
         assert len(planning_matrix) == len(targets)
         m = len(planning_matrix)
         total = 0
@@ -128,7 +125,7 @@ class QuadraticLossFunction(LossFunction):
             compute = base.evaluate(x) - y
             compute **= 2
             total += compute
-        total /= m
+        total /= 2 * m
         return total
 
     def calculate_gradient(self, base, planning_matrix, targets):
@@ -137,7 +134,7 @@ class QuadraticLossFunction(LossFunction):
         ans = [0 for _ in range(t)]
         for k in range(m):
             diff = base.diff(planning_matrix[k])
-            calc = 2 * (base.evaluate(planning_matrix[k]) - targets[k])
+            calc = (base.evaluate(planning_matrix[k]) - targets[k])
             for i in range(t):
                 ans[i] += diff[i] * calc
         for i in range(t):
@@ -216,21 +213,6 @@ class ElasticNetworkLossFunction(LossFunction):
         return ans
 
 
-def normalize_features(train_data):
-    mean = [np.mean(
-        [train_data[i][j] for i in range(len(train_data))]
-    ) for j in range(len(train_data[0]) - 1)]
-    mean.append(np.float64(0))
-    std = [np.mean(
-        [train_data[i][j] for i in range(len(train_data))]
-    ) for j in range(len(train_data[0]) - 1)]
-    std.append(np.float64(1))
-    data = [[(train_data[i][j] - mean[j]) / std[j]
-             for j in range(len(train_data[0]))] for i in range(len(train_data))]
-
-    return data
-
-
 class LinearRegressionModel:
 
     def solve_analytically(self, alpha = 0.0):
@@ -240,7 +222,7 @@ class LinearRegressionModel:
             data = self.train
 
         planning_matrix = np.array([
-            [1, *[data[i][j] for j in range(len(self.train[i]) - 1)]]
+            [1, *[data[i][j] for j in range(len(data[i]) - 1)]]
             for i in range(len(data))
         ])
 
@@ -252,7 +234,6 @@ class LinearRegressionModel:
         self.theta = np.linalg.inv(XtX) @ Xty
 
     def estimate_coef(self, eta):
-
         alfa = [0, 0.0001, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1]
         beta = [0, 0.01, 0.05, 0.1, 0.2, 0.5, 1, 2, 5]
         pick_alfa = -1
@@ -305,6 +286,22 @@ class LinearRegressionModel:
         shuffle(data)
         self.raw_data = data
 
+    def normalize_features(self):
+        mean = [np.mean(
+            [self.train[i][j] for i in range(len(self.train))]
+        ) for j in range(len(self.train[0]) - 1)]
+        mean.append(np.float64(0))
+        std = [np.std(
+            [self.train[i][j] for i in range(len(self.train))]
+        ) for j in range(len(self.train[0]) - 1)]
+        std.append(np.float64(1))
+        self.train = [[(self.train[i][j] - mean[j]) / std[j]
+                 for j in range(len(self.train[0]))] for i in range(len(self.train))]
+        self.validate = [[(self.validate[i][j] - mean[j]) / std[j]
+                 for j in range(len(self.validate[0]))] for i in range(len(self.validate))]
+        self.test = [[(self.test[i][j] - mean[j]) / std[j]
+                 for j in range(len(self.test[0]))] for i in range(len(self.test))]
+
     def split_data(self, train_ratio, valid_ratio, normalise = True):
         assert train_ratio + valid_ratio < 1
         train = train_ratio
@@ -318,9 +315,7 @@ class LinearRegressionModel:
             self.raw_data[:train], self.raw_data[train:valid],
             self.raw_data[valid:])
         if normalise:
-            self.train = normalize_features(self.train)
-            self.test = normalize_features(self.test)
-            self.validate = normalize_features(self.validate)
+            self.normalize_features()
 
     def __init__(self, file, normalise = True,
                  train_ratio = 0.6, valid_ratio = 0.2):
@@ -329,9 +324,8 @@ class LinearRegressionModel:
         self.validate = []
         self.test = []
         self.open_file(file)
-        self.split_data(train_ratio, valid_ratio)
-        self.theta = None
         self.split_data(train_ratio, valid_ratio, normalise)
+        self.theta = None
         self.eta = 0.005
         self.baseFunction = Linear()
         self.lossFunction = QuadraticLossFunction()
@@ -413,7 +407,7 @@ class LinearRegressionModel:
 
             if self.print > 0 and (k % self.print) == 0:
                 print(f"{k}: Gradient: {np.linalg.norm(gradient)}, MSE: {
-                self.lossFunction.mse(self.baseFunction, planning_matrix, targets)
+                self.lossFunction.calculate_loss(self.baseFunction, planning_matrix, targets)
                 }")
 
             if (self.condition != StopCondition.Iterations
@@ -435,7 +429,7 @@ class LinearRegressionModel:
             return
         self.baseFunction.theta(self.theta)
         newfunc = QuadraticLossFunction()
-        return newfunc.mse(self.baseFunction, [
+        return newfunc.calculate_loss(self.baseFunction, [
             [1, *[data[i][j] for j in range(len(data[i]) - 1)]]
             for i in range(len(data))
         ], [ data[i][-1] for i in range(len(data))])
