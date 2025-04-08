@@ -94,24 +94,29 @@ class Gaussian(BaseFunction):
 class Custom(BaseFunction):
     def __init__(self, help_func = None):
         super().__init__()
-        self.parameters = [0 for _ in range(29)]
         self.helpFunc = help_func
         if self.helpFunc is None:
             self.helpFunc = Linear()
+        self.func = lambda x: [*[x[i] for i in range(8)],
+                      *[x[i] * x[j] for i in range(1, 8) for j in range(i, 8)],
+                      *[x[i] * x[j] * x[k] for i in range(1, 8) for j in range(i, 8) for k in range(j, 8)]]
+        self.parameters = [0 for _ in range(len(self.func([0 for _ in range(8)])))]
         self.helpFunc.parameters = self.parameters
 
+
+    def setdiff(self, func):
+        self.func = func
+        self.parameters = [0 for _ in range(len(self.func([0 for _ in range(8)])))]
+        self.helpFunc.parameters = self.parameters
     def evaluate(self, x):
         self.helpFunc.theta(self.parameters)
         return self.helpFunc.evaluate(self.diff(x))
 
-    def own_diff(self, x):
-        arr = [*[x[i] for i in [0, 1, 2, 3, 4, 5, 6, 7]], *[x[i] * x[j] for i in [1, 2, 3, 4, 5, 6, 7] for j in range(i, 7)] ]
-        return arr
 
     def diff(self, x):
         if self.helpFunc is None:
-            return self.own_diff(x)
-        return self.helpFunc.diff(self.own_diff(x))
+            return self.func(x)
+        return self.helpFunc.diff(self.func(x))
 
 class QuadraticLossFunction(LossFunction):
     def calculate_loss(self, base, planning_matrix, targets):
@@ -233,19 +238,22 @@ class LinearRegressionModel:
         Xty = X.T @ y
         self.theta = np.linalg.inv(XtX) @ Xty
 
-    def estimate_coef(self, eta):
-        alfa = [0, 0.0001, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1]
-        beta = [0, 0.01, 0.05, 0.1, 0.2, 0.5, 1, 2, 5]
+    def estimate_coef(self):
+        alfa = [0, 0.0001, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 1, 2, 5, 10]
+        beta = [0, 0.0001, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 1, 2, 5, 10]
+        self.lr = []
+        self.rr = []
         pick_alfa = -1
         best_alpha = 9999999999
         pick_beta = -1
         best_beta = 9999999999
-        self.set_parameters(eta=eta, stop=0.5, rep_count=1750, condition=StopCondition.Both)
+        self.set_parameters(stop=0.5, rep_count=1000, condition=StopCondition.Both)
         self.set_parameters(mini_batch=True, batch_size=64, print_c=-1)
         for i in range(len(alfa)):
             self.set_parameters(loss_function=RidgeRegressionFunction(alfa[i]))
             self.linear_regression()
             res = self.MSE(self.validate)
+            self.rr.append([alfa[i], res])
             if res < best_alpha:
                 best_alpha = res
                 pick_alfa = alfa[i]
@@ -253,6 +261,7 @@ class LinearRegressionModel:
             self.set_parameters(loss_function=LassoRegressionFunction(beta[j]))
             self.linear_regression()
             res = self.MSE(self.validate)
+            self.lr.append([beta[j], res])
             if res < best_beta:
                 best_beta = res
                 pick_beta = beta[j]
@@ -337,6 +346,9 @@ class LinearRegressionModel:
         self.print = 50
         self.fraction = 1
         self.split = False
+        self.lc = []
+        self.lr = []
+        self.rr = []
         pass
 
     def set_parameters(self, eta = None, loss_function = None,
@@ -373,6 +385,7 @@ class LinearRegressionModel:
         return self.lossFunction.calculate_gradient(self.baseFunction, planning_matrix, targets)
 
     def linear_regression(self):
+        self.lc = []
         if self.baseFunction.parameters is None:
             theta_size = len(self.train[0])
         else:
@@ -406,9 +419,12 @@ class LinearRegressionModel:
             ])
 
             if self.print > 0 and (k % self.print) == 0:
-                print(f"{k}: Gradient: {np.linalg.norm(gradient)}, MSE: {
-                self.lossFunction.calculate_loss(self.baseFunction, planning_matrix, targets)
+                grad = np.linalg.norm(gradient)
+                mse = self.lossFunction.calculate_loss(self.baseFunction, planning_matrix, targets)
+                print(f"{k}: Gradient: {grad}, MSE: {
+                    mse
                 }")
+                self.lc.append([k, grad, mse])
 
             if (self.condition != StopCondition.Iterations
                     and np.linalg.norm(gradient) < self.stop):
@@ -439,6 +455,62 @@ class LinearRegressionModel:
             return
         self.baseFunction.theta(self.theta)
         return self.baseFunction.evaluate(x)
+
+    def plot_learning_curves(self):
+        # Unpack the data from self.lc
+        iterations = [item[0] for item in self.lc]
+        gradients = [item[1] for item in self.lc]
+        mses = [item[2] for item in self.lc]
+
+        # Create the plots
+        fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+
+        # Plot Iteration vs Gradient
+        axs[0].plot(iterations, gradients, marker='o', color='tab:blue')
+        axs[0].set_title('Iteration vs Gradient')
+        axs[0].set_xlabel('Iteration')
+        axs[0].set_ylabel('Gradient')
+        axs[0].grid(True)
+
+        # Plot Iteration vs MSE
+        axs[1].plot(iterations, mses, marker='s', color='tab:orange')
+        axs[1].set_title('Iteration vs MSE')
+        axs[1].set_xlabel('Iteration')
+        axs[1].set_ylabel('Mean Squared Error (MSE)')
+        axs[1].grid(True)
+
+        plt.tight_layout()
+        plt.show()
+    def plot_reg_coef(self):
+        # Unpack the data from self.lc
+        coef = [item[0] for item in self.lr]
+        x_pos = list(range(len(coef)))
+        lasso = [item[1] for item in self.lr]
+        ridge = [item[1] for item in self.rr]
+
+        # Create the plots
+        fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+
+        # Plot Iteration vs Gradient
+        axs[0].plot(coef, lasso, marker='o', color='tab:blue')
+        axs[0].set_title('MSE for different lasso coefficients')
+        axs[0].set_xlabel('Lasso Coefficient')
+        axs[0].set_ylabel('MSE on Validation Set')
+        axs[0].set_xticks(x_pos)
+        axs[0].set_xticklabels([str(c) for c in coef], rotation=45)
+        axs[0].grid(True)
+
+        # Plot Iteration vs MSE
+        axs[1].plot(coef, ridge, marker='o', color='tab:blue')
+        axs[1].set_title('MSE for different ridge coefficients')
+        axs[1].set_xlabel('Ridge Coefficient')
+        axs[1].set_ylabel('MSE on Validation Set')
+        axs[1].set_xticks(x_pos)
+        axs[1].set_xticklabels([str(c) for c in coef], rotation=45)
+        axs[1].grid(True)
+
+        plt.tight_layout()
+        plt.show()
 
     def print_results(self):
         # Prepare train data
