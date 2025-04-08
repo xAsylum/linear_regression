@@ -481,33 +481,30 @@ class LinearRegressionModel:
 
         plt.tight_layout()
         plt.show()
+
     def plot_reg_coef(self):
-        # Unpack the data from self.lc
+        # Unpack the data
         coef = [item[0] for item in self.lr]
-        x_pos = list(range(len(coef)))
         lasso = [item[1] for item in self.lr]
         ridge = [item[1] for item in self.rr]
 
-        # Create the plots
         fig, axs = plt.subplots(1, 2, figsize=(12, 5))
 
-        # Plot Iteration vs Gradient
+        # Lasso plot
         axs[0].plot(coef, lasso, marker='o', color='tab:blue')
         axs[0].set_title('MSE for different lasso coefficients')
         axs[0].set_xlabel('Lasso Coefficient')
         axs[0].set_ylabel('MSE on Validation Set')
-        axs[0].set_xticks(x_pos)
-        axs[0].set_xticklabels([str(c) for c in coef], rotation=45)
-        axs[0].grid(True)
+        axs[0].set_xscale('log')
+        axs[0].grid(True, which="both", linestyle='--', linewidth=0.5)
 
-        # Plot Iteration vs MSE
+        # Ridge plot
         axs[1].plot(coef, ridge, marker='o', color='tab:blue')
         axs[1].set_title('MSE for different ridge coefficients')
         axs[1].set_xlabel('Ridge Coefficient')
         axs[1].set_ylabel('MSE on Validation Set')
-        axs[1].set_xticks(x_pos)
-        axs[1].set_xticklabels([str(c) for c in coef], rotation=45)
-        axs[1].grid(True)
+        axs[1].set_xscale('log')
+        axs[1].grid(True, which="both", linestyle='--', linewidth=0.5)
 
         plt.tight_layout()
         plt.show()
