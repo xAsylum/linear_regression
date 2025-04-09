@@ -117,13 +117,13 @@ Niech $T = \{ [x^{(i)}_1, x^{(i)}_2, \dots, x^{(i)}_7, y^{(i)}] \} = \{(x^{(i)},
     \centering
     \begin{minipage}[b]{0.48\textwidth}
         \centering
-    \includegraphics[width=0.9\textwidth]{regular.png} % Replace with your image file
+    \includegraphics[width=0.9\textwidth]{data/regular.png} % Replace with your image file
     \caption{Dane oryginalne, MSE: $13607.09$}
     \end{minipage}
     \hspace{0.02\textwidth}
     \begin{minipage}[b]{0.48\textwidth}
         \centering
-    \includegraphics[width=0.9\textwidth]{standard.png} % Replace with your image file
+    \includegraphics[width=0.9\textwidth]{data/standard.png} % Replace with your image file
     \caption{Dane ustandaryzowane, MSE: $13675.66$}
     \end{minipage}
 \end{figure} \\
@@ -162,29 +162,29 @@ Na zajęciach wyprowadziliśmy fakt, że jeśli $\theta$ minimalizuję funkcję 
 W dalszej części tej sekcji chciałbym porównać skuteczność algorytmu \textbf{mini-batch} w porównaniu do klasycznego algorytmu regresji liniowej. Na początku sprawdźmy, jak sprawuje się klasyczny algorytm. Poniższe wykresy przedstawiają zmianę gradientu oraz MSE w kolejnych iteracjach. W tym wywołaniu dostałem MSE na zbiorze treningowym: $14124.78$, na testowym: $14630.03$, a gradient zbiegł do $0.04$.
 \begin{figure}
     \centering
-    \includegraphics[width=0.9\textwidth]{itgradnormal.png}
+    \includegraphics[width=0.9\textwidth]{data/itgradnormal.png}
     \caption{Gradient i MSE dla kolejnych iteracji, bez \textbf{mini-batch}}
 \end{figure} \\
 Jeśli chodzi o algorytm \textbf{mini-batch}, to ma on pewne ciekawe cechy które odkryłem podczas jego używania. Przez to że wybieramy dane w losowy sposób, to próbka którą dostajemy \texttt{względnie dobrze} symuluje średnią po wszystkich danych testowych. Jednak jest on ekstremalnie szybszy (miałem sytuacje gdy mini-batch trenował model podobnie efektywnie co zwykły gradient descent, ale robił to w $10$ sekund zamiast w $2$ minuty). Poniżej porównanie kilku przebiegów algorytmu \textbf{mini-batch} dla różnych ustawień rozmiaru pakietu.
 \begin{figure}
     \centering
     \begin{minipage}[b]{0.48\textwidth}
-    \includegraphics[width=0.9\textwidth]{b1.png}
+    \includegraphics[width=0.9\textwidth]{data/b1.png}
     \caption{\texttt{batch size}$=1$, \texttt{MSE}$=14957.47$}
     \end{minipage}
      \hspace{0.02\textwidth}
     \begin{minipage}[b]{0.48\textwidth}
-    \includegraphics[width=0.9\textwidth]{b8.png}
+    \includegraphics[width=0.9\textwidth]{data/b8.png}
     \caption{\texttt{batch size}$=8$, \texttt{MSE}$=14740.81$}
     \end{minipage}
     \hspace{0.02\textwidth}
     \begin{minipage}[b]{0.48\textwidth}
-    \includegraphics[width=0.9\textwidth]{b32.png}
+    \includegraphics[width=0.9\textwidth]{data/b32.png}
     \caption{\texttt{batch size}$=32$, \texttt{MSE}$=14584.44$}
     \end{minipage}
      \hspace{0.02\textwidth}
     \begin{minipage}[b]{0.48\textwidth}
-    \includegraphics[width=0.9\textwidth]{b128.png}
+    \includegraphics[width=0.9\textwidth]{data/b128.png}
     \caption{\texttt{batch size}$=128$, \texttt{MSE}$=14609.96$}
     \end{minipage}
 \end{figure} \bigskip \\
@@ -197,11 +197,95 @@ Podczas trenowania modelu uwzględniłem również regularyzacje L1 i L2 oraz re
 Okazuje się że gdy nie rozważamy funkcji bazowych to regularyzacja nie daje prawie żadnej poprawy gdy chodzi o przewidywanie naszych danych, gdyż nawet na danych treningowych ma problemy z dopasowaniem odpowiedniej płaszczyzny i nie zachodzi przeuczenie. Gdy będziemy jednak trenować nasz model dla wybranych funkcji bazowych, będziemy z niej korzystać żeby algorytm mógł dopasowywać się do danych bez overfittingu. Na wykresach poniżej widzimy, że model póki co osiąga najlepsze wyniki, gdy w ogóle nie korzystamy z regularyzacji.
 \begin{figure}
     \centering
-    \includegraphics[width=0.9\textwidth]{valid_reg_coef.png}
+    \includegraphics[width=0.9\textwidth]{data/valid_reg_coef.png}
     \caption{Wyniki dla różnych parametrów regularyzacji na zbiorze walidacyjnym}
 \end{figure} \\
-\section*{Podział danych}
+\FloatBarrier
+\section*{Uczenie na frakcjach zbioru treningowego}
+W tym rozdziale chciałbym przeanalizować, jak model poradzi sobie na różnych frakcjach zbioru treningowego. Analogicznie jak we wcześniejszej części dokumentu, będę stosował podział danych na zbiory w proporcji $0.6 : 0.2 : 0.2$. Dane które zebrałem zostały przygotowane w następujacy sposób: Mój algorytm miał $5$ przebiegów w których za każdym razem najpierw podzieliłem dane na zbiory, a potem odpaliłem algorytm regresji liniowej na różnych frakcjach zbioru treningowego i zebrałem wyniki. Na koniec uśredniłem wyniki dla każdej frakcji.
+
+\begin{figure}[h!]
+    \centering
+    \begin{minipage}[b]{0.48\textwidth}
+    \includegraphics[width=0.9\textwidth]{data/fracgraph.png}
+    \caption{Wyniki dla różnych frakcji zbioru treningowego}
+    \end{minipage}
+     \hspace{0.02\textwidth}
+    \begin{minipage}[b]{0.48\textwidth}
+    \includegraphics[width=0.9\textwidth]{data/fractable.png}
+    \end{minipage}
+\end{figure}
+\FloatBarrier
+
+Widzimy, że mimo początkowo ogromnej różnicy model radzi sobie nienajgorzej już, gdy korzystamy z $12.5 \% $ czy $62.5 \%$ zbioru treningowego. Spróbujmy teraz zbić nasz wynik za pomocą wykorzystania funkcji bazowych.
 
 \section*{Szersza analiza danych}
+Pierwszą rzeczą, od której zacząłem, było stworzenie macierzy korelacji (Pearsone'a) między cechami $x$ oraz wynikiem y na podstawie danych. Macierz ta mówi nam o stopniu zależności między poszczególnymi cechami i wynikiem. Dodatnia korelacja będzie nam mówić o tym że gdy jedna wartość rośnie to druga też, a ujemna, że gdy jedna wartość rośnie, to druga maleje. Poniżej przedstawiam tą macierz w formie heatmapy.
+
+\begin{figure}[h!]
+    \centering
+    \begin{minipage}[b]{0.48\textwidth}
+    \includegraphics[width=0.9\textwidth]{data/corr.png}
+    \caption{Macierz korelacji}
+    \end{minipage} \hspace{}
+    \begin{minipage}[b]{0.48\textwidth}
+    \includegraphics[width=0.9\textwidth]{data/linear27.png}
+    \caption{Zależność $x_2$ i $x_7$}
+    \end{minipage}
+\end{figure} \\
+
+Pierwsze, co bardzo się rzuca w oczy to to jak silnie skorelowane są cechy nr 2 i 7. Okazuje się, że w dostarczonych danych $x_7$ jest funkcją $x_2$, zatem jedna z tych cech jest nadmiarowa. Widzimy również, że wynik $y$ jest najbardziej skorelowany z cechami $x_1, x_4, x_5$, trochę słabiej z $x_7$ i $x_3$. Zatem moim strzałem będzie użycie funkcji bazowych $[x_1, x_3, x_4, x_5, x_6, x_7, x_1^2, x_4^2, x_5^2, x_1 \cdot x_4, x_1 \cdot x_5, x_4 \cdot x_5]$. Gradient zbiegał o wiele wolniej, więc puściłem algorytm na $5000$ iteracji. Otrzymałem \texttt{Train Set MSE = 8069.05} oraz \texttt{Test Set MSE = 8945.86}. Jednak używając funkcji bazowych $[W(x) : \deg(W) \leq 2]$ otrzymuję jeszcze lepsze MSE, \texttt{Train Set MSE = 4356.73, Test Set MSE = 4403.39}. Używając funkji bazowych $[W(x) : \deg(W) \leq 3]$ dostaję nieznaczną poprawę, \texttt{Train Set MSE: 3836.69, Test Set MSE: 4142.41}
+
+\begin{figure}[h!]
+    \centering
+    \begin{minipage}[b]{0.48\textwidth}
+    \includegraphics[width=0.9\textwidth]{data/first_custom.png}
+    \caption{Wyniki pierwszej partii funkcji bazowych}
+    \end{minipage} \hspace{}
+    \begin{minipage}[b]{0.48\textwidth}
+    \includegraphics[width=0.9\textwidth]{data/third_custom.png}
+    \caption{Wyniki trzeciej partii funkcji bazowych}
+    \end{minipage}
+\end{figure} \\
+
+Cichym bohaterem okazał się tu być algorytm \textbf{mini-batch}, który znacząco poprawia szybkość działania algorytmu bez pogarszania jakości uczenia się. Widzimy zatem, że raczej nie chodzi o wielomiany trzeciego stopnia, więc spróbujmy dołożyć coś do tych drugiego.
+
+\begin{figure}[h!]
+    \centering
+
+    \includegraphics[width=0.25\textwidth]{data/sorted.png}
+    \caption{Współczynniki $\theta$ przy kolejnych funkcjach bazowych}
+\end{figure} \\
+
+Wróćmy do przypadku z wielomianami 2 stopnia i przeanalizujmy parametry przy kolejnych funkcjach bazowych. Widzimy, że model szacuje że największą rolę grają kombinacje $x_1, x_2, x_4, x_5$ ale również $x_3^2$, którego nie uwzględniliśmy przy naszym pierwszym pomyśle. Wysokie współczynniki przy funkcjach liniowych dają mi pomysł, że warto spróbować do naszych cech dołożyć funkcje gaussowskie. \bigskip \\
+Przetestowałem swoją hipotezę używając różnych funkcji bazowych postaci
+\begin{center}
+$[W(x) : \deg(W) \leq 2] \cup \bigcup_{i, \alpha}[g(x_i, \alpha)]$
+\end{center}
+Gdzie $g(x, \alpha) = \mathrm{e}^{-\frac{x^2}{\alpha^2}}$, dla każdej z nich w oparciu o zbiór walidacyjny wyznaczyłem parametry regularyzacji z siecią elastyczną. Trenowanie tego modelu wraz z wyznaczaniem hiperparametrów zaczęło schodzić wykładniczo długo (uznałem że użycie regularyzacji będzie przydatne, gdyż model zaczął overfitować się do zbioru treningowego). Jednak udało mi się w ten sposób znacząco zbić błąd i w końcu dotrenowałem model do wyników \texttt{Train Set MSE: 1291.55 Test Set MSE: 1294.79}. A oto funkcje bazowe których użyłem
+\begin{center}
+    $[W(x) : \deg(W) \leq 2] \cup \bigcup_{i\neq 2}[g(x_i, 0.01)]\cup \bigcup_{i\neq 2}[g(x_i, 0.5)]$
+\end{center}
+
+
+\begin{figure}[h!]
+    \centering
+    \begin{minipage}[b]{0.48\textwidth}
+    \includegraphics[width=0.9\textwidth]{data/finlc.png}
+    \caption{Krzywa uczenia ostatecznego modelu}
+    \end{minipage} \hspace{}
+    \begin{minipage}[b]{0.48\textwidth}
+    \includegraphics[width=0.9\textwidth]{data/finadjust.png}
+    \caption{Wynik ostateczny}
+    \end{minipage}
+\end{figure} \\
+
+
+\section*{Podsumowanie}
+Podczas pracy z załączonymi danymi udało mi się zbliżyć do błędu $\approx 1294.79$. Po turbulencjach związanych z umiejętnościami kodowania udało mi się również przetestować moje rozwiązanie na konkursie.
+\begin{figure}[h!]
+    \includegraphics[width=0.9\textwidth]{data/benchmark.png}
+    \caption{Benchmark jaki uzyskałem}
+\end{figure} \\
 
 \end{document}

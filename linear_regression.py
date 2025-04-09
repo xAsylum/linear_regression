@@ -91,6 +91,9 @@ class Gaussian(BaseFunction):
         return [1, *np.exp([(-((x[i+1] / self.s) ** 2) ) for i in range(len(x) - 1)])]
 
 
+def gauss(x, s):
+    return np.exp(-((x / s) ** 2))
+
 class Custom(BaseFunction):
     def __init__(self, help_func = None):
         super().__init__()
@@ -299,10 +302,12 @@ class LinearRegressionModel:
         mean = [np.mean(
             [self.train[i][j] for i in range(len(self.train))]
         ) for j in range(len(self.train[0]) - 1)]
+        self.mean = mean
         mean.append(np.float64(0))
         std = [np.std(
             [self.train[i][j] for i in range(len(self.train))]
         ) for j in range(len(self.train[0]) - 1)]
+        self.std = std
         std.append(np.float64(1))
         self.train = [[(self.train[i][j] - mean[j]) / std[j]
                  for j in range(len(self.train[0]))] for i in range(len(self.train))]
@@ -328,6 +333,8 @@ class LinearRegressionModel:
 
     def __init__(self, file, normalise = True,
                  train_ratio = 0.6, valid_ratio = 0.2):
+        self.mean = []
+        self.std = []
         self.raw_data = []
         self.train = []
         self.validate = []
@@ -436,6 +443,9 @@ class LinearRegressionModel:
         self.theta = theta[-1]
         return theta[-1]
 
+    def MSEs(self):
+        return [self.MSE(self.train), self.MSE(self.test)]
+
     def results(self):
         print(f"Train Set MSE: {self.MSE(self.train)}")
         print(f"Test Set MSE: {self.MSE(self.test)}")
@@ -542,8 +552,18 @@ class LinearRegressionModel:
         plt.legend()
         plt.grid(True)
         plt.show()
+    def plot_x2_x7(self):
+        X = [self.raw_data[i][1] for i in range(len(self.raw_data))]
+        Y = [self.raw_data[i][6] for i in range(len(self.raw_data))]
+        plt.plot(X, Y, alpha=0.6, label='x_7(x_2)', color='orange')
+        plt.xlabel('Cecha nr 2')
+        plt.ylabel('Cecha nr 7')
+        plt.title('Zależność cech 2 i 7')
+        plt.plot()
 
-
+        plt.legend()
+        plt.grid(True)
+        plt.show()
 
 
 
